@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOLO Object Detection with Satellite Map</title>
+    <script src="https://js.api.here.com/v3/3.1/mapsjs-core.js"></script>
+    <script src="https://js.api.here.com/v3/3.1/mapsjs-service.js"></script>
+    <script src="https://js.api.here.com/v3/3.1/mapsjs-mapevents.js"></script>
+    <script src="https://js.api.here.com/v3/3.1/mapsjs-ui.js"></script>
+    <script src="https://js.api.here.com/v3/3.1/mapsjs-places.js"></script>
+    <link rel="stylesheet" href="https://js.api.here.com/v3/3.1/mapsjs-ui.css" />
+</head>
+<body>
+    <h1>HERE Satellite Map with YOLO Detection</h1>
+
+    <!-- Container for the map -->
+    <div id="map" style="width: 100%; height: 500px;"></div>
+
+    <!-- Button to capture map screenshot -->
+    <button id="captureButton">Capture Map and Apply Detection</button>
+
+    <!-- Search box for location search -->
+    <div id="search-container" style="margin-top: 20px;">
+        <label for="searchBox">Search Location:</label>
+        <input type="text" id="searchBox" placeholder="Search for a place (e.g., city, address)" />
+        <button id="searchButton">Search</button>
+    </div>
+
+    <!-- Section to display the detected images -->
+    <div id="detectionResult">
+        <h2>Processed Images:</h2>
+        <img id="processedImage1" src="" alt="Detected Image 1" style="width: 400px; height: auto;">
+        <img id="processedImage2" src="" alt="Detected Image 2" style="width: 400px; height: auto;">
+        <img id="processedImage3" src="" alt="Detected Image 3" style="width: 400px; height: auto;">
+        <img id="processedImage4" src="" alt="Detected Image 4" style="width: 400px; height: auto;">
+        <img id="processedImage5" src="" alt="Detected Image 5" style="width: 400px; height: auto;">
+        <img id="processedImage6" src="" alt="Detected Image 6" style="width: 400px; height: auto;">
+        <img id="processedImage7" src="" alt="Detected Image 7" style="width: 400px; height: auto;">
+        <img id="processedImage8" src="" alt="Detected Image 8" style="width: 400px; height: auto;">
+        <img id="processedImage9" src="" alt="Detected Image 9" style="width: 400px; height: auto;">
+    </div>
+
+    <!-- Section to display the detected objects with their coordinates -->
+    <div id="detectedObjectsList" style="margin-top: 20px;">
+        <h2>Detected Objects:</h2>
+        <ul id="objectsList"></ul>
+    </div>
+
+    <script>
+        // Initialize the HERE platform with your API key
+        var platform = new H.service.Platform({
+            'apikey': '8dcGBy0K1LCzTwyc0OWq7yNCR-SO69rcqFrccB1A2f4' // Replace with your HERE API key
+        });
+
+        // Create the default layers object
+        var defaultLayers = platform.createDefaultLayers();
+
+        // Initialize the map with satellite imagery
+        var map = new H.Map(
+            document.getElementById('map'),
+            defaultLayers.raster.satellite.map, // Use the satellite raster layer
+            {
+                zoom: 2,  // Increased zoom level to show a larger area
+                center: { lat: 20, lng: 0 }  // Center around the equator
+            }
+        );
+
+        // Enable map interaction (panning, zooming)
+        var behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
+
+        // Add default UI components
+        var ui = H.ui.UI.createDefault(map, defaultLayers);
+
+        // Search service and geocoding
+        var searchService = platform.getSearchService();
+
+        // Search button event listener
+        var originalPosition = null;
+        document.getElementById('searchButton').addEventListener('click', function () {
+            var query = document.getElementById('searchBox').value;
+            searchService.geocode({
+                q: query
+            }, function (result) {
+                if (result.items.length > 0) {
+                    var position = result.items[0].position;
+                    originalPosition = position;
+                    map.setCenter(position);
+                    map.setZoom(16); // Adjust the zoom level to show a larger area
+                    console.log("Found location:", position);
+                } else {
+                    alert("Location not found.");
+                }
+            }, function (error) {
+                console.error("Geocoding error:", error);
+            });
+        });
+
+        // Capture and process the map image
+        document.getElementById('captureButton').addEventListener('click', function () {
+            // Set zoom level to larger area and capture the entire map image
+            map.setZoom(16); // Approximately 500m height to cover a larger area
+            setTimeout(() => {
+                map.capture(function (canvas) {
+                    var imageBase64 = canvas.toDataURL("image/jpeg");
+
+                    // Fetch the current map coordinates
+                    var currentCenter = map.getCenter();
+                    
+                    // Split the coordinates into nine parts (3x3 grid) with increased distance
+                    var latOffset = 0.005; // Increased distance between each section in latitude
+                    var lngOffset = 0.005; // Increased distance between each section in longitude
+
+                    var centers = [
+                        { lat: currentCenter.lat + latOffset, lng: currentCenter.lng - lngOffset },
+                        { lat: currentCenter.lat + latOffset, lng: currentCenter.lng },
+                        { lat: currentCenter.lat + latOffset, lng: currentCenter.lng + lngOffset },
+                        { lat: currentCenter.lat, lng: currentCenter.lng - lngOffset },
+                        { lat: currentCenter.lat, lng: currentCenter.lng },
+                        { lat: currentCenter.lat, lng: currentCenter.lng + lngOffset },
+                        { lat: currentCenter.lat - latOffset, lng: currentCenter.lng - lngOffset },
+                        { lat: currentCenter.lat - latOffset, lng: currentCenter.lng },
+                        { lat: currentCenter.lat - latOffset, lng: currentCenter.lng + lngOffset }
+                    ];
+
+                    let capturedImages = [];
+
+                    function captureNext(index) {
+                        if (index >= centers.length) {
+                            // Send all nine images to the backend
+                            fetch('/process_screenshot', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ images: capturedImages })
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                // Display the processed images
+                                var timestamp = new Date().getTime();  // Unique timestamp to avoid caching
+                                document.getElementById('processedImage1').src = data.images_url[0] + '?t=' + timestamp;
+                                document.getElementById('processedImage2').src = data.images_url[1] + '?t=' + timestamp;
+                                document.getElementById('processedImage3').src = data.images_url[2] + '?t=' + timestamp;
+                                document.getElementById('processedImage4').src = data.images_url[3] + '?t=' + timestamp;
+                                document.getElementById('processedImage5').src = data.images_url[4] + '?t=' + timestamp;
+                                document.getElementById('processedImage6').src = data.images_url[5] + '?t=' + timestamp;
+                                document.getElementById('processedImage7').src = data.images_url[6] + '?t=' + timestamp;
+                                document.getElementById('processedImage8').src = data.images_url[7] + '?t=' + timestamp;
+                                document.getElementById('processedImage9').src = data.images_url[8] + '?t=' + timestamp;
+
+                                console.log("Detected Objects from Image 1:", data.detected_objects[0]);
+                                console.log("Detected Objects from Image 2:", data.detected_objects[1]);
+                                console.log("Detected Objects from Image 3:", data.detected_objects[2]);
+                                console.log("Detected Objects from Image 4:", data.detected_objects[3]);
+                                console.log("Detected Objects from Image 5:", data.detected_objects[4]);
+                                console.log("Detected Objects from Image 6:", data.detected_objects[5]);
+                                console.log("Detected Objects from Image 7:", data.detected_objects[6]);
+                                console.log("Detected Objects from Image 8:", data.detected_objects[7]);
+                                console.log("Detected Objects from Image 9:", data.detected_objects[8]);
+
+                                // Populate the list of detected objects with their coordinates
+                                let objectsList = document.getElementById('objectsList');
+                                objectsList.innerHTML = '';
+                                data.detected_objects.forEach((objects, imgIndex) => {
+                                    objects.forEach(obj => {
+                                        let listItem = document.createElement('li');
+                                        listItem.textContent = `Image ${imgIndex + 1} - Index: ${obj.index}, Label: ${obj.label}, Coordinates: (${obj.coordinates.x_min}, ${obj.coordinates.y_min}), (${obj.coordinates.x_max}, ${obj.coordinates.y_max})`;
+                                        objectsList.appendChild(listItem);
+                                    });
+                                });
+
+                                // Return map to original coordinates
+                                if (originalPosition) {
+                                    map.setCenter(originalPosition);
+                                    map.setZoom(16);
+                                }
+                            });
+                            return;
+                        }
+
+                        map.setCenter(centers[index]);
+                        map.setZoom(18); // Approximately 50m height
+                        setTimeout(() => {
+                            map.capture(function (canvas) {
+                                capturedImages.push(canvas.toDataURL("image/jpeg"));
+                                captureNext(index + 1);
+                            });
+                        }, 2000);
+                    }
+
+                    captureNext(0);
+                });
+            }, 2000);
+        });
+    </script>
+</body>
+</html>
